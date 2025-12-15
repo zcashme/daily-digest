@@ -19,11 +19,8 @@
 
   <section class="controls">
     <div class="row">
-      <label>Start Date
-        <input type="date" id="startDate" />
-      </label>
-      <label>End Date
-        <input type="date" id="endDate" />
+      <label>Date
+        <input type="date" id="dateInput" />
       </label>
       <label>Time Zone
         <select id="tz">
@@ -79,8 +76,7 @@
 
     const state = { commits: [], orgGroups: [], trello: [], actionGroups: [] };
 
-    const startDateEl = document.getElementById('startDate');
-    const endDateEl = document.getElementById('endDate');
+    const dateInputEl = document.getElementById('dateInput');
     const tzEl = document.getElementById('tz');
     const btnGenerate = document.getElementById('btnGenerate');
     const transcriptsEl = document.getElementById('transcriptsSummary');
@@ -94,8 +90,7 @@
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
     const yStr = yesterday.toISOString().split('T')[0];
-    if (startDateEl) startDateEl.value = yStr;
-    if (endDateEl) endDateEl.value = yStr;
+    if (dateInputEl) dateInputEl.value = yStr;
 
     function setProgress(pct = 0, label = '') {
       progressEl.classList.remove('hidden');
@@ -123,16 +118,21 @@
       }
     }
 
-    function toISO(dateStr) {
-      const tz = tzEl.value || 'UTC';
-      const d = new Date(dateStr + 'T00:00:00Z');
-      return d.toISOString();
+    function toStartISO(dateStr) {
+      if (!dateStr) return '';
+      return new Date(dateStr + 'T00:00:00Z').toISOString();
+    }
+
+    function toEndISO(dateStr) {
+      if (!dateStr) return '';
+      return new Date(dateStr + 'T23:59:59.999Z').toISOString();
     }
 
     btnGenerate.addEventListener('click', async () => {
-      const startISO = toISO(startDateEl.value);
-      const endISO = toISO(endDateEl.value);
-      if (!startISO || !endISO) { alert('Please set the week start and end dates.'); return; }
+      const dateVal = dateInputEl.value;
+      if (!dateVal) { alert('Please select a date.'); return; }
+      const startISO = toStartISO(dateVal);
+      const endISO = toEndISO(dateVal);
       setLoading(true);
 
       let repoGroup = null;
