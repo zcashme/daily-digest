@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Daily Digest (WDWDY) - Zcash Me</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+  <script src="https://unpkg.com/mammoth/mammoth.browser.min.js"></script>
+  <!-- Runtime site config: defines window.CONFIG.API_BASE_URL for deployments -->
+  <script src="config.js"></script>
+</head>
+
+<body>
+  <header>
+    <h1>Daily Digest (WDWDY)</h1>
+    <p>Zcash Me · Meeting Notes + GitHub Commits + Trello Activity</p>
+  </header>
+
+  <section class="controls">
+    <div class="row">
+      <label>Start Date
+        <input type="date" id="startDate" />
+      </label>
+      <label>End Date
+        <input type="date" id="endDate" />
+      </label>
+      <label>Time Zone
+        <select id="tz">
+          <option value="UTC">UTC</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <section class="actions">
+    <button id="btnGenerate">Load Daily Data</button>
+    <button id="btnExportTxt">Export TXT</button>
+    <button id="btnExportMd">Export Markdown</button>
+    <span id="progressText" class="progress-text"></span>
+  </section>
+  <div id="progress" class="progress hidden">
+    <div id="progressFill" class="progress-bar"></div>
+  </div>
+
+  <section class="results">
+    <div class="section-header section-main">
+      <h2>Transcripts Summary (Meeting Notes)</h2>
+      <button id="btnCopyTranscripts" type="button" style="margin-right: 8px;">Copy</button>
+      <button id="toggleTranscripts" class="section-toggle" aria-expanded="true" aria-controls="transcriptsSummary"
+        type="button" aria-label="Toggle transcripts">▾ Collapse</button>
+    </div>
+    <div id="transcriptsSummary"></div>
+  </section>
+
+  <section class="results">
+    <div class="section-header section-main">
+      <h2>GitHub Commits by Repository</h2>
+      <button id="btnCopyGitHub" type="button" style="margin-right: 8px;">Copy</button>
+      <button id="toggleGitHub" class="section-toggle" aria-expanded="true" aria-controls="githubCommits" type="button"
+        aria-label="Toggle GitHub commits">▾ Collapse</button>
+    </div>
+    <div id="githubCommits"></div>
+  </section>
+
+  <section class="results">
+    <div class="section-header section-main">
+      <h2>Trello Board Activity</h2>
+      <button id="btnCopyTrello" type="button" style="margin-right: 8px;">Copy</button>
+      <button id="toggleTrello" class="section-toggle" aria-expanded="true" aria-controls="trelloActivity" type="button"
+        aria-label="Toggle Trello activity">▾ Collapse</button>
+    </div>
+    <div id="trelloActivity"></div>
+  </section>
+
+  <script type="module">
+    import { fetchCommits, fetchOrgCommits } from './src/github.js';
+    import { fetchMeetingNotes, fetchBoardActions } from './src/trello.js';
+
+    const state = { commits: [], orgGroups: [], trello: [], actionGroups: [] };
+
+    const startDateEl = document.getElementById('startDate');
+    const endDateEl = document.getElementById('endDate');
+    const tzEl = document.getElementById('tz');
+    const btnGenerate = document.getElementById('btnGenerate');
+    const transcriptsEl = document.getElementById('transcriptsSummary');
+    const githubEl = document.getElementById('githubCommits');
+    const trelloEl = document.getElementById('trelloActivity');
+    const progressEl = document.getElementById('progress');
+    const progressFillEl = document.getElementById('progressFill');
+    const progressTextEl = document.getElementById('progressText');
+
+    // Default to Yesterday
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yStr = yesterday.toISOString().split('T')[0];
+    if (startDateEl) startDateEl.value = yStr;
+    if (endDateEl) endDateEl.value = yStr;
+
+    function setProgress(pct = 0, label = '') {
+      progressEl.classList.remove('hidden');
+      const clamped = Math.max(0, Math.min(100, Number(pct) || 0));
+      progressFillEl.style.width = clamped + '%';
+      if (label) progressTextEl.textContent = label;
+    }
+    function resetProgress() {
+      progressFillEl.style.width = '0%';
+      progressTextEl.textContent = '';
+      progressEl.classList.add('hidden');
+    }
+    function setLoading(on) {
+      if (on) {
+        btnGenerate.disabled = true;
+        btnGenerate.dataset.originalText = btnGenerate.textContent;
+        btnGenerate.textContent = 'Loading…';
+        btnGenerate.classList.add('loading');
+        setProgress(5, 'Starting…');
+      } else {
+        btnGenerate.disabled = false;
+        btnGenerate.textContent = btnGenerate.dataset.originalText || 'Load Daily Data';
+        btnGenerate.classList.remove('loading');
+        resetProgress();
+      }
+    }
+
+    function toISO(dateStr) {
+      const tz = tzEl.value || 'UTC';
+      const d = new Date(dateStr + 'T00:00:00Z');
+      return d.toISOString();
+    }
+
+    btnGenerate.addEventListener('click', async () => {
+      const startISO = toISO(startDateEl.value);
+      const endISO = toISO(endDateEl.value);
+      if (!startISO || !endISO) { alert('Please set the week start and end dates.'); return; }
+      setLoading(true);
+
+      let repoGroup = null;
+      try {
+        // Fetch commits from specific repo main branch: ZcashUsersGroup/zcashme
+        const repoCommits = await fetchCommits({ owner: 'ZcashUsersGroup', repo: 'zcashme', branch: 'main', since: startISO, until: endISO });
+        repoGroup = { repo: 'ZcashUsersGroup/zcashme', url: 'https://github.com/ZcashUsersGroup/zcashme', branch: 'main', commits: repoCommits };
+        setProgress(20, 'Repo commits (zcashme) loaded');
+      } catch (e) { console.error('GitHub API Error', e); alert('Repo commits fetch failed: ' + (e?.message || e)); setProgress(20, 'Repo commits failed'); }
+
+      try {
+        const orgGroups = await fetchOrgCommits({ org: 'zcashme', since: startISO, until: endISO });
+        // Merge org groups after repo group if available
+        state.orgGroups = repoGroup ? [repoGroup, ...orgGroups] : orgGroups;
+        setProgress(40, 'GitHub org commits loaded');
+      } catch (e) { console.error('GitHub API Error', e); alert('GitHub org commits fetch failed: ' + (e?.message || e)); setProgress(33, 'GitHub org commits failed'); }
+
+      try {
+        state.trello = await fetchMeetingNotes({ boardName: 'Zcash Me', listName: 'Meeting Notes', since: startISO, until: endISO });
+        setProgress(66, 'Meeting notes loaded');
+      } catch (e) { console.error('Trello API Error', e); alert('Trello meeting notes fetch failed: ' + (e?.message || e)); setProgress(66, 'Meeting notes failed'); }
+
+      // Trello board actions
+      try {
+        state.actionGroups = await fetchBoardActions({ boardName: 'Zcash Me', since: startISO, until: endISO, types: 'all', inProgressList: 'In Progress', completedList: 'Completed' });
+        setProgress(90, 'Board actions loaded');
+      } catch (e) { console.error('Trello API Error', e); alert('Trello board actions fetch failed: ' + (e?.message || e)); setProgress(90, 'Board actions failed'); }
+
+      // Render sections
+      transcriptsEl.innerHTML = renderMeetingNotes(state.trello);
+      githubEl.innerHTML = renderOrgCommits(state.orgGroups);
+      trelloEl.innerHTML = renderActions(state.actionGroups);
+      setProgress(100, 'Done');
+      setTimeout(() => setLoading(false), 250);
+    });
+
+    function esc(s) { return String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+    function firstLine(s) { return String(s || '').split('\n')[0].trim() }
+
+    function renderCommits(commits = []) {
+      if (!Array.isArray(commits) || commits.length === 0) return '<p>No commits.</p>';
+      return '<ul>' + commits.map(c =>
+        `<li>${esc(c.date || '')} ${esc(c.author || '')}: ${esc(firstLine(c.message || ''))} ` +
+        (c.url ? `<a href="${esc(c.url)}" target="_blank">link</a>` : '') + '</li>'
+      ).join('') + '</ul>';
+    }
+
+    function renderOrgCommits(groups = []) {
+      if (!Array.isArray(groups) || groups.length === 0) return '<p>No commits across organization.</p>';
+      return groups.map((g, idx) => {
+        const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+        const secId = `gh-repo-${slug(g.repo || 'repo')}-${idx}`;
+        const header = `<div class="section-header section-sub"><h3>${esc(g.repo || '')}${g.branch ? ` · ${esc(g.branch)}` : ''} ${g.url ? `(<a href="${esc(g.url)}" target="_blank">repo</a>)` : ''}</h3><button id="btn-${secId}" class="section-toggle" aria-expanded="true" aria-controls="${secId}" type="button" aria-label="Toggle repo">▾ Collapse</button></div>`;
+        const body = `<div id="${secId}">${renderCommits(g.commits || [])}</div>`;
+        return header + body;
+      }).join('');
+    }
+
+    function renderMeetingNotes(cards = []) {
+      if (!Array.isArray(cards) || cards.length === 0) return '<p>No meeting notes.</p>';
+      // Sort by titleDate (preferred) or dateLastActivity, descending (newest first)
+      const toTs = (c) => {
+        if (c && c.titleDate) {
+          const t = Date.parse(String(c.titleDate) + 'T00:00:00Z');
+          return isNaN(t) ? 0 : t;
+        }
+        const t2 = Date.parse(c && c.dateLastActivity ? String(c.dateLastActivity) : '');
+        return isNaN(t2) ? 0 : t2;
+      };
+      const items = [...cards].sort((a, b) => toTs(b) - toTs(a));
+      return '<ul>' + items.map(c => {
+        const comments = Array.isArray(c.comments) ? c.comments.length : 0;
+        const attachments = Array.isArray(c.attachments) ? c.attachments.length : 0;
+        const desc = esc(String(c.desc || '').slice(0, 300));
+        const dateShown = esc(c.titleDate || c.dateLastActivity || '');
+        const addedShown = c.addedDate ? ` ( Added Date: ${esc(c.addedDate)})` : '';
+        return `<li>${dateShown}${addedShown} ${esc(c.name || '')} ` +
+          (c.url ? `(<a href="${esc(c.url)}" target="_blank">link</a>) ` : '') +
+          `– Desc: ${desc}` +
+          (comments ? ` · ${comments} comments` : '') +
+          (attachments ? ` · ${attachments} attachments` : '') +
+          `</li>`;
+      }).join('') + '</ul>';
+    }
+
+    function renderActions(groups = []) {
+      if (!Array.isArray(groups) || groups.length === 0) return '<p>No actions.</p>';
+      const renderCardHeader = (c) => {
+        const labels = (Array.isArray(c.labels) && c.labels.length) ? ' · ' + c.labels.map(lb => esc(lb.name || lb.color || '')).join(', ') : '';
+        const owners = (Array.isArray(c.owners) && c.owners.length) ? ' · ' + c.owners.map(o => esc(o.fullName || o.username || '')).join(', ') : '';
+        const comp = c.completion ? ` · ${c.completion.completed || 0}/${c.completion.total || 0} done` : '';
+        const link = c.url ? ` (<a href="${esc(c.url)}" target="_blank">link</a>)` : '';
+        return `<h4>${esc(c.name || '')}${labels}${owners}${comp}${link}</h4>`;
+      };
+      const renderAction = (a) => {
+        const date = esc(a.date || '');
+        const who = esc(a.member || '');
+        if (a.type === 'commentCard' && a.text) {
+          const txt = String(a.text || '');
+          const clip = txt.length > 200 ? txt.slice(0, 200) + '…' : txt;
+          return `<li>${date} comment · ${who} – ${esc(clip)}</li>`;
+        }
+        if (a.type === 'updateCheckItemStateOnCard') {
+          const name = esc(a.checkItemName || '');
+          return `<li>${date} checklist completed · ${who} – ${name}</li>`;
+        }
+        if (a.type === 'addAttachmentToCard' && a.attachment && a.attachment.name && a.attachment.url) {
+          return `<li>${date} attachment added · ${who} – <a href="${esc(a.attachment.url)}" target="_blank">${esc(a.attachment.name)}</a></li>`;
+        }
+        if (a.type === 'updateCard' || a.type === 'createCard' || a.type === 'copyCard' || a.type === 'moveCardToBoard') {
+          const list = esc(a.list || '');
+          return `<li>${date} moved/added · ${who} → ${list}</li>`;
+        }
+        const fallback = [date, esc(a.type || '')];
+        if (who) fallback.push(who);
+        return `<li>${fallback.join(' · ')}</li>`;
+      };
+      return groups.map((g, gi) => {
+        const slug = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+        const colId = `trello-col-${slug(g.column || 'column')}-${gi}`;
+        const groupHeader = `<div class="section-header section-sub"><h3>${esc(g.column || '')}</h3><button id="btn-${colId}" class="section-toggle" aria-expanded="true" aria-controls="${colId}" type="button" aria-label="Toggle column">▾ Collapse</button></div>`;
+        const cardsHtml = (g.cards || []).map((c, ci) => {
+          const cardIdBase = c.id ? String(c.id) : slug(c.name || 'card');
+          const cardId = `trello-card-${cardIdBase}-${gi}-${ci}`;
+          const header = `<div class="section-header section-sub"><h4>${esc(c.name || '')}${(Array.isArray(c.labels) && c.labels.length) ? ' · ' + c.labels.map(lb => esc(lb.name || lb.color || '')).join(', ') : ''}${(Array.isArray(c.owners) && c.owners.length) ? ' · ' + c.owners.map(o => esc(o.fullName || o.username || '')).join(', ') : ''}${c.completion ? ` · ${c.completion.completed || 0}/${c.completion.total || 0} done` : ''}${c.url ? ` (<a href="${esc(c.url)}" target="_blank">link</a>)` : ''}</h4><button id="btn-${cardId}" class="section-toggle" aria-expanded="true" aria-controls="${cardId}" type="button" aria-label="Toggle card">▾ Collapse</button></div>`;
+          const actionsHtml = '<ul>' + (c.actions || []).map(renderAction).join('') + '</ul>';
+          return header + `<div id="${cardId}">${actionsHtml}</div>`;
+        }).join('');
+        return groupHeader + `<div id="${colId}">${cardsHtml}</div>`;
+      }).join('');
+    }
+
+    // Auto-init toggles inside a container for dynamically rendered subsections
+    function initSubsectionToggles(container) {
+      const buttons = container.querySelectorAll('.section-toggle');
+      buttons.forEach(btn => {
+        if (btn.dataset.bound === '1') return;
+        const targetId = btn.getAttribute('aria-controls');
+        if (!targetId) return;
+        setupToggle(btn.id, targetId, true);
+        btn.dataset.bound = '1';
+      });
+    }
+
+    // Observe dynamic content changes to initialize subsection toggles
+    const _observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        const node = m.target;
+        if (node instanceof HTMLElement) initSubsectionToggles(node);
+      }
+    });
+    _observer.observe(document.getElementById('githubCommits'), { childList: true, subtree: true });
+    _observer.observe(document.getElementById('trelloActivity'), { childList: true, subtree: true });
+
+    // Toggle buttons: bind to sections and persist state in session
+    // --- Export & Copy Functionality ---
+    function formatMeetingNotes(notes, isMd) {
+      if (!notes || !notes.length) return 'No meeting notes.';
+      return notes.map(c => {
+        const date = c.titleDate || c.dateLastActivity || '';
+        const link = c.url ? (isMd ? `[link](${c.url})` : c.url) : '';
+        return `- ${date} ${c.name} ${link}\n  ${c.desc}`;
+      }).join('\n\n');
+    }
+
+    function formatCommits(groups, isMd) {
+      if (!groups || !groups.length) return 'No commits.';
+      return groups.map(g => {
+        const header = isMd ? `### ${g.repo} (${g.branch})` : `REPO: ${g.repo} (${g.branch})`;
+        const commits = (g.commits || []).map(c => {
+          const link = c.url ? (isMd ? `[link](${c.url})` : c.url) : '';
+          return `- ${c.date} ${c.author}: ${firstLine(c.message)} ${link}`;
+        }).join('\n');
+        return `${header}\n${commits}`;
+      }).join('\n\n');
+    }
+
+    function formatActions(groups, isMd) {
+      if (!groups || !groups.length) return 'No actions.';
+      return groups.map(g => {
+        const header = isMd ? `### ${g.column}` : `COLUMN: ${g.column}`;
+        const cards = (g.cards || []).map(c => {
+          const cardHeader = isMd ? `#### ${c.name}` : `CARD: ${c.name}`;
+          const actions = (c.actions || []).map(a => {
+            let text = `${a.date} · ${a.member} · ${a.type}`;
+            if (a.text) text += ` · ${a.text}`;
+            return `- ${text}`;
+          }).join('\n');
+          return `${cardHeader}\n${actions}`;
+        }).join('\n\n');
+        return `${header}\n${cards}`;
+      }).join('\n\n');
+    }
+
+    function generateReport(format) {
+      const isMd = format === 'markdown';
+      let text = '';
+
+      text += isMd ? '## Transcripts Summary\n\n' : 'TRANSCRIPTS SUMMARY\n\n';
+      text += formatMeetingNotes(state.trello, isMd) + '\n\n';
+
+      text += isMd ? '## GitHub Commits\n\n' : 'GITHUB COMMITS\n\n';
+      text += formatCommits(state.orgGroups, isMd) + '\n\n';
+
+      text += isMd ? '## Trello Activity\n\n' : 'TRELLO ACTIVITY\n\n';
+      text += formatActions(state.actionGroups, isMd) + '\n';
+
+      return text;
+    }
+
+    document.getElementById('btnExportTxt').addEventListener('click', () => {
+      const text = generateReport('txt');
+      const blob = new Blob([text], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'weekly-digest.txt';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('btnExportMd').addEventListener('click', () => {
+      const text = generateReport('markdown');
+      const blob = new Blob([text], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'weekly-digest.md';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('btnCopyTranscripts').addEventListener('click', () => {
+      navigator.clipboard.writeText(formatMeetingNotes(state.trello, false)).then(() => alert('Copied Transcripts!'));
+    });
+
+    document.getElementById('btnCopyGitHub').addEventListener('click', () => {
+      navigator.clipboard.writeText(formatCommits(state.orgGroups, false)).then(() => alert('Copied GitHub Commits!'));
+    });
+
+    document.getElementById('btnCopyTrello').addEventListener('click', () => {
+      navigator.clipboard.writeText(formatActions(state.actionGroups, false)).then(() => alert('Copied Trello Activity!'));
+    });
+
+    function setupToggle(btnId, targetId, defaultExpanded = true) {
+      const btn = document.getElementById(btnId);
+      const el = document.getElementById(targetId);
+      if (!btn || !el) return;
+      const key = `section:${targetId}:expanded`;
+      const persisted = sessionStorage.getItem(key);
+      let expanded = persisted === null ? defaultExpanded : (persisted === 'true');
+      apply(expanded);
+      btn.addEventListener('click', () => {
+        expanded = !expanded;
+        apply(expanded);
+        sessionStorage.setItem(key, String(expanded));
+      });
+      function apply(on) {
+        el.classList.toggle('collapsed', !on);
+        btn.setAttribute('aria-expanded', String(on));
+        btn.textContent = on ? '▾ Collapse' : '▸ Expand';
+      }
+    }
+    setupToggle('toggleTranscripts', 'transcriptsSummary', true);
+    setupToggle('toggleGitHub', 'githubCommits', true);
+    setupToggle('toggleTrello', 'trelloActivity', true);
+  </script>
+</body>
+
+</html>
