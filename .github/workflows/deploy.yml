@@ -1,4 +1,4 @@
-name: Deploy Weekly Digest
+name: Deploy Daily Digest
 
 on:
   push:
@@ -16,7 +16,7 @@ permissions:
   packages: write
 
 concurrency:
-  group: "deploy-weekly-digest"
+  group: "deploy-daily-digest"
   cancel-in-progress: false
 
 jobs:
@@ -93,4 +93,4 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ghcr.io/${{ steps.owner.outputs.lower }}/weekly-digest-backend:latest
+          tags: ghcr.io/${{ steps.owner.outputs.lower }}/daily-digest-backend:latest
