@@ -2,7 +2,7 @@ name: Daily Digest
 
 on:
   schedule:
-    - cron: '0 9 * * *'
+    - cron: '0 1 * * *'
   workflow_dispatch:
 
 jobs:
@@ -20,4 +20,4 @@ jobs:
         env:
           TRELLO_KEY: ${{ secrets.TRELLO_KEY }}
           TRELLO_TOKEN: ${{ secrets.TRELLO_TOKEN }}
-        run: python scripts/trello_activity.py
+        run: python scripts/create_daily_card.py
