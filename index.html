@@ -329,7 +329,11 @@
 
     function generateReport(format) {
       const isMd = format === 'markdown';
+      const dateVal = document.getElementById('dateInput').value || 'Unknown Date';
       let text = '';
+
+      // Main Header
+      text += isMd ? `# Daily Digest (WDWDY) - ${dateVal}\n\n` : `DAILY DIGEST (WDWDY) - ${dateVal}\n\n`;
 
       text += isMd ? '## Transcripts Summary\n\n' : 'TRANSCRIPTS SUMMARY\n\n';
       text += formatMeetingNotes(state.trello, isMd) + '\n\n';
@@ -349,7 +353,7 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'weekly-digest.txt';
+      a.download = 'daily-digest.txt';
       a.click();
       URL.revokeObjectURL(url);
     });
@@ -360,7 +364,7 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'weekly-digest.md';
+      a.download = 'daily-digest.md';
       a.click();
       URL.revokeObjectURL(url);
     });
